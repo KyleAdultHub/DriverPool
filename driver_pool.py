@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
 import json
-import re
-from selenium import webdriver
-import time
-import requests
-import threading
-from utils.common.killer import killer
-from utils.common.log import Logger
-from random import randint
 import os
+import re
+import threading
+import time
+from random import randint
+import requests
+from selenium import webdriver
+from common.log import Logger
+
+from common.killer import killer
 
 _logger = Logger(__name__).logger
 

@@ -224,6 +224,7 @@ class DriverPoll(object):
         self._lock.acquire()
         if driver not in self.driver_pool:
             self.logger.warning('the driver you want to dequeue is not in the driver pool, can not be dequeue.')
+            return False
         else:
             driver_index = self.driver_pool.index(driver)
             self.driver_pool.pop(driver_index)
@@ -235,6 +236,7 @@ class DriverPoll(object):
                 size=len(self.driver_pool)
             ))
         self._lock.release()
+        return True
 
     def _get_driver_from_driver_pool(self):
         while True:

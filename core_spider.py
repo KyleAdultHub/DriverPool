@@ -26,15 +26,9 @@ class CoreSpider(abc.ABC):
     def __init__(self, concurrent=8, driver="chrome", proxy_url="", save_folder="./",
                  only_html=False, no_js=False, headless=False, driver_log_path="driver.log",
                  logger=None, proxy_scheme="http", timeout=60, driver_time_limit=60 * 5, driver_use_limit=8,
-                 execute_path="", window_size=None, redis_key=None, **redis_kwargs):
+                 execute_path="", window_size=None):
         self._concurrent = concurrent
         self._task_queue = Queue()
-        self._redis_queue = self._create_redis_cursor(**redis_kwargs) if redis_kwargs else None
-        self._redis_key = redis_key
-        if (not self._redis_key and self._redis_queue) or (self._redis_key and not self._redis_queue):
-            raise Exception("the redis_key or redis args is None, redis_key:{redis_key}, kwargs:{kwargs}".format(
-                redis_key=self._redis_key, kwargs=redis_kwargs
-            ))
         self.driver_poll = DriverPoll(driver=driver, proxy_url=proxy_url, save_folder=save_folder, only_html=only_html,
                                       no_js=no_js, headless=headless, driver_log_path=driver_log_path, logger=logger,
                                       proxy_scheme=proxy_scheme, timeout=timeout, driver_size=concurrent,
@@ -54,10 +48,6 @@ class CoreSpider(abc.ABC):
             _logger.info("enqueue task kw:{} url:{}".format(task.kw, task.url))
         self._task_queue.put(pickle.dumps(task, protocol=-1))
 
-    @staticmethod
-    def _create_redis_cursor(**redis_kwargs):
-        return StrictRedis(**redis_kwargs)
-
     @abc.abstractmethod
     def task_create(self):
         """该方法为初始化任务方法，继承的爬虫必须实现该方法，
@@ -67,15 +57,8 @@ class CoreSpider(abc.ABC):
         """
 
     def init_task_enqueue(self):
-        if not self._redis_key and not self._redis_queue:
-            task = self.task_create()
-            self._task_push(task)
-        else:
-            while True:
-                if self._task_queue.qsize() < self._concurrent:
-                    kw = self._redis_queue.lpop(self._redis_key)
-                    task = self.task_create(kw=kw)
-                    self._task_push(task)
+        task = self.task_create()
+        self._task_push(task)
 
     def exchange_driver(self, driver):
         if self.driver_poll.dequeue_driver(driver):
@@ -111,3 +94,43 @@ class CoreSpider(abc.ABC):
             time.sleep(1)
         self._task_queue.join()
         self.driver_poll.clear_driver_pool()
+
+
+class CoreRedisSpider(abc.ABC, CoreSpider):
+    def __init__(self, concurrent=8, driver="chrome", proxy_url="", save_folder="./",
+                 only_html=False, no_js=False, headless=False, driver_log_path="driver.log",
+                 logger=None, proxy_scheme="http", timeout=60, driver_time_limit=60 * 5, driver_use_limit=8,
+                 execute_path="", window_size=None, redis_key=None, **redis_kwargs):
+        self._concurrent = concurrent
+        self._task_queue = Queue()
+        self._redis_queue = self._create_redis_cursor(**redis_kwargs) if redis_kwargs else None
+        self._redis_key = redis_key
+        if (not self._redis_key and self._redis_queue) or (self._redis_key and not self._redis_queue):
+            raise Exception("the redis_key or redis args is None, redis_key:{redis_key}, kwargs:{kwargs}".format(
+                redis_key=self._redis_key, kwargs=redis_kwargs
+            ))
+        self.driver_poll = DriverPoll(driver=driver, proxy_url=proxy_url, save_folder=save_folder, only_html=only_html,
+                                      no_js=no_js, headless=headless, driver_log_path=driver_log_path, logger=logger,
+                                      proxy_scheme=proxy_scheme, timeout=timeout, driver_size=concurrent,
+                                      driver_time_limit=driver_time_limit, driver_use_limit=driver_use_limit,
+                                      execute_path=execute_path, window_size=window_size)
+        self.killed = Killer()
+
+    @staticmethod
+    def _create_redis_cursor(**redis_kwargs):
+        return StrictRedis(**redis_kwargs)
+
+    @abc.abstractmethod
+    def task_create(self, kw):
+        """该方法为初始化任务方法，继承的爬虫必须实现该方法，
+        当使用redis作为生产者的时候，调度器每次收到redis一个任务就会调用一次该方法，
+        并把收到的内容作用kw参数， 传递给该方法，
+        返回值: 一个Task对象
+        """
+
+    def init_task_enqueue(self):
+        while True:
+            if self._task_queue.qsize() < self._concurrent:
+                kw = self._redis_queue.lpop(self._redis_key)
+                task = self.task_create(kw=kw)
+                self._task_push(task)

@@ -96,7 +96,7 @@ class CoreSpider(abc.ABC):
         self.driver_poll.clear_driver_pool()
 
 
-class CoreRedisSpider(abc.ABC, CoreSpider):
+class CoreRedisSpider(abc.ABC):
     def __init__(self, concurrent=8, driver="chrome", proxy_url="", save_folder="./",
                  only_html=False, no_js=False, headless=False, driver_log_path="driver.log",
                  logger=None, proxy_scheme="http", timeout=60, driver_time_limit=60 * 5, driver_use_limit=8,
@@ -116,6 +116,18 @@ class CoreRedisSpider(abc.ABC, CoreSpider):
                                       execute_path=execute_path, window_size=window_size)
         self.killed = Killer()
 
+    def _task_pop(self):
+        task_pickle = self._task_queue.get()
+        if task_pickle:
+            return pickle.loads(task_pickle)
+        else:
+            return None
+
+    def _task_push(self, task):
+        if task:
+            _logger.info("enqueue task kw:{} url:{}".format(task.kw, task.url))
+        self._task_queue.put(pickle.dumps(task, protocol=-1))
+
     @staticmethod
     def _create_redis_cursor(**redis_kwargs):
         return StrictRedis(**redis_kwargs)
@@ -134,3 +146,32 @@ class CoreRedisSpider(abc.ABC, CoreSpider):
                 kw = self._redis_queue.lpop(self._redis_key)
                 task = self.task_create(kw=kw)
                 self._task_push(task)
+
+    def _consumer(self):
+        while True:
+            task = self._task_pop()
+            if task is None:
+                break
+            handle_func = task.handle_func
+            driver = self.driver_poll.query_driver()
+            for task_gen in handle_func(task, driver):
+                self._task_push(task_gen)
+            driver.delete_all_cookies()
+            self.driver_poll.out_of_use(driver)
+
+    def schedule(self):
+        consumer_thd_list = [threading.Thread(target=self._consumer) for _ in range(self._concurrent)]
+        init_task_enqueue_thd = threading.Thread(target=self.init_task_enqueue)
+        init_task_enqueue_thd.setDaemon(True)
+        init_task_enqueue_thd.start()
+        for thd in consumer_thd_list:
+            thd.start()
+        while True:
+            if self.killed.kill_now:
+                _logger.info("receive kill signal, the producer is stopping.")
+                for i in range(self._concurrent):
+                    self._task_push(None)
+                break
+            time.sleep(1)
+        self._task_queue.join()
+        self.driver_poll.clear_driver_pool()

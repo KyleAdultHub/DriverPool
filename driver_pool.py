@@ -7,9 +7,9 @@ import time
 from random import randint
 import requests
 from selenium import webdriver
-from common.log import Logger
+from .common.log import Logger
 
-from common.killer import killer
+from .common.killer import killer
 
 _logger = Logger(__name__).logger
 
@@ -206,7 +206,7 @@ class DriverPoll(object):
             self._driver_query_time_list.append(time.time())
             self._driver_use_times_list.append(0)
             self._driver_using_flag.append(False)
-            self.logger.info('Successfully enqueue new driver into the driver pool, driver pool size now: {size}'.format(
+            self.logger.debug('Successfully enqueue new driver into the driver pool, driver pool size now: {size}'.format(
                 size=len(self.driver_pool)
             ))
         self._lock.release()
@@ -232,7 +232,7 @@ class DriverPoll(object):
             self._driver_query_time_list.pop(driver_index)
             self._driver_using_flag.pop(driver_index)
             self.quit_driver(driver)
-            self.logger.info('Successfully dequeue this driver from driver pool, driver pool size now: {size}'.format(
+            self.logger.debug('Successfully dequeue this driver from driver pool, driver pool size now: {size}'.format(
                 size=len(self.driver_pool)
             ))
         self._lock.release()
@@ -289,7 +289,7 @@ class DriverPoll(object):
         else:
             driver_index = self.driver_pool.index(driver)
             self._driver_using_flag[driver_index] = False
-            self.logger.info('Successfully transfer thr flag for the driver to no using, driver pool size now: {size}'.format(
+            self.logger.debug('Successfully transfer thr flag for the driver to no using, driver pool size now: {size}'.format(
                 size=len(self.driver_pool)
             ))
         self._lock.release()

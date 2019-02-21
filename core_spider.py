@@ -147,6 +147,8 @@ class CoreRedisSpider(abc.ABC):
         while True:
             if self._task_queue.qsize() < self._concurrent:
                 kw = self._redis_queue.blpop(self.redis_key)
+                if kw:
+                    kw = str(kw[1])
                 task = self.task_create(kw=kw)
                 self._task_push(task)
 
